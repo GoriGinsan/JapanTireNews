@@ -4,6 +4,22 @@ param(
 
 $ErrorActionPreference = "Stop"
 
+function Initialize-ToolPath {
+    $paths = @(
+        "C:\Program Files\Git\cmd",
+        "C:\Program Files\GitHub CLI",
+        "C:\Program Files\nodejs",
+        "$env:APPDATA\npm"
+    )
+
+    [array]::Reverse($paths)
+    foreach ($path in $paths) {
+        if ((Test-Path $path) -and ($env:PATH -notlike "*$path*")) {
+            $env:PATH = "$path;$env:PATH"
+        }
+    }
+}
+
 function Import-DotEnv {
     $envPath = Join-Path (Get-Location) ".env"
     if (-not (Test-Path $envPath)) {
@@ -49,13 +65,31 @@ function Resolve-GitCommand {
     throw "git.exe was not found. Install Git for Windows or add it to PATH."
 }
 
-function Resolve-CodexCommand {
-    $command = Get-Command codex -ErrorAction SilentlyContinue
-    if ($command) {
-        return $command.Source
+function Resolve-CodexInvocation {
+    $nodeCandidates = @(
+        "C:\Program Files\nodejs\node.exe",
+        "$env:USERPROFILE\.cache\codex-runtimes\codex-primary-runtime\dependencies\node\bin\node.exe"
+    )
+    $codexScript = "$env:APPDATA\npm\node_modules\@openai\codex\bin\codex.js"
+
+    foreach ($node in $nodeCandidates) {
+        if ((Test-Path $node) -and (Test-Path $codexScript)) {
+            return @{
+                File = $node
+                BaseArgs = @($codexScript)
+            }
+        }
     }
 
-    throw "codex CLI was not found. Install and authenticate Codex CLI before enabling this job."
+    $command = Get-Command codex -ErrorAction SilentlyContinue
+    if ($command -and ($command.Source -notlike "*\WindowsApps\*")) {
+        return @{
+            File = $command.Source
+            BaseArgs = @()
+        }
+    }
+
+    throw "codex CLI was not found in a runnable location. Install with npm install -g @openai/codex and ensure Node.js is available."
 }
 
 function Resolve-GhCommand {
@@ -108,6 +142,7 @@ function Get-OpenIssuesSummary {
 
 $ProjectRoot = Split-Path -Parent $PSScriptRoot
 Set-Location $ProjectRoot
+Initialize-ToolPath
 Import-DotEnv
 
 $git = Resolve-GitCommand
@@ -147,5 +182,23 @@ Important context:
   .\.venv\Scripts\python.exe -m japan_tire_news --dry-run --force
 "@ | Set-Content -LiteralPath $promptPath -Encoding UTF8
 
-$codex = Resolve-CodexCommand
-& $codex --full-auto (Get-Content -LiteralPath $promptPath -Raw)
+$codex = Resolve-CodexInvocation
+$prompt = Get-Content -LiteralPath $promptPath -Raw
+
+if ($Autofix) {
+    $codexArgs = @(
+        "exec",
+        "-C", $ProjectRoot,
+        "--dangerously-bypass-approvals-and-sandbox",
+        "-"
+    )
+} else {
+    $codexArgs = @(
+        "exec",
+        "-C", $ProjectRoot,
+        "-s", "read-only",
+        "-"
+    )
+}
+
+$prompt | & $codex.File @($codex.BaseArgs + $codexArgs)
