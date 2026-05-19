@@ -29,11 +29,37 @@ Teamsへ投稿します。9:00-18:00以外は何もしません。
 
 ## Windowsタスク登録
 
-9:00から18:00まで1時間おきに実行します。18:00も含みます。
+9:00から18:00まで1時間おきに実行します。18:00も含みます。土日祝日はPython側で実行を停止します。
 
 ```powershell
 powershell.exe -ExecutionPolicy Bypass -File .\scripts\install_windows_task.ps1
 ```
+
+## サブPCで動かす場合
+
+サブPCでは以下の流れでセットアップしてください。
+
+```powershell
+git clone https://github.com/GoriGinsan/JapanTireNews.git
+cd JapanTireNews
+python -m venv .venv
+.\.venv\Scripts\python.exe -m pip install -r requirements.txt
+Copy-Item .env.example .env
+```
+
+`.env` にTeams Webhook URLを設定したあと、以下で動作確認します。
+
+```powershell
+.\.venv\Scripts\python.exe -m japan_tire_news --dry-run --force
+```
+
+問題なければWindowsタスクを登録します。
+
+```powershell
+powershell.exe -ExecutionPolicy Bypass -File .\scripts\install_windows_task.ps1
+```
+
+メインPCとサブPCの両方でタスクを有効にすると二重通知になる可能性があります。サブPCだけで運用する場合は、メインPC側の `JapanTireNewsHourly` タスクを無効化してください。
 
 ## 通知ルール
 
@@ -69,4 +95,3 @@ powershell.exe -ExecutionPolicy Bypass -File .\scripts\install_windows_task.ps1
 - PR TIMES 新型車
 
 InstagramとXは、認証や動的描画の影響で安定取得が難しいためMVPでは無効化しています。必要な場合は公式APIまたは専用の監視サービス連携を追加してください。
-

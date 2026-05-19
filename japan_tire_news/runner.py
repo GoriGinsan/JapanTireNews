@@ -5,6 +5,8 @@ import re
 from datetime import datetime, timedelta
 from zoneinfo import ZoneInfo
 
+import holidays
+
 from .classify import classify_item
 from .collect import Collector
 from .config import load_config, load_sources
@@ -16,15 +18,15 @@ from .teams import build_message, post_to_teams
 def main() -> None:
     parser = argparse.ArgumentParser(description="Collect tire market news and notify Microsoft Teams.")
     parser.add_argument("--dry-run", action="store_true", help="Collect and print results without posting to Teams.")
-    parser.add_argument("--force", action="store_true", help="Run outside 9:00-18:00.")
+    parser.add_argument("--force", action="store_true", help="Run outside the time, weekend, and holiday checks.")
     parser.add_argument("--limit", type=int, default=10, help="Maximum number of items to notify.")
     args = parser.parse_args()
 
     config = load_config()
     tz = ZoneInfo(config.timezone)
 
-    if not args.force and not _within_business_hours(tz):
-        print("Outside collection window. No action.")
+    if not args.force and not _should_run_now(tz):
+        print("Outside collection calendar. No action.")
         return
 
     sources = load_sources(config.sources_path)
@@ -70,9 +72,24 @@ def main() -> None:
         storage.close()
 
 
-def _within_business_hours(tz: ZoneInfo) -> bool:
+def _should_run_now(tz: ZoneInfo) -> bool:
     now = datetime.now(tz)
+    if not _within_business_hours(now):
+        return False
+    if _is_weekend_or_japanese_holiday(now):
+        return False
+    return True
+
+
+def _within_business_hours(now: datetime) -> bool:
     return 9 <= now.hour <= 18
+
+
+def _is_weekend_or_japanese_holiday(now: datetime) -> bool:
+    if now.weekday() >= 5:
+        return True
+    japan_holidays = holidays.country_holidays("JP", years=[now.year])
+    return now.date() in japan_holidays
 
 
 def _is_too_old(published_at: datetime | None, max_item_age_days: int, tz: ZoneInfo) -> bool:
