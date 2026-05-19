@@ -140,6 +140,64 @@ function Get-OpenIssuesSummary {
     return "[]"
 }
 
+function New-CodexPullRequest {
+    param(
+        [string]$GitPath,
+        [string]$GhPath
+    )
+
+    if (-not $GhPath) {
+        Write-Warning "GitHub CLI was not found. Skipping PR creation."
+        return
+    }
+
+    $branch = (& $GitPath branch --show-current).Trim()
+    if ([string]::IsNullOrWhiteSpace($branch) -or $branch -eq "main") {
+        Write-Host "No Codex autofix branch is checked out. Skipping PR creation."
+        return
+    }
+
+    if ($branch -notlike "codex/autofix-*") {
+        Write-Host "Current branch '$branch' is not a Codex autofix branch. Skipping PR creation."
+        return
+    }
+
+    $status = & $GitPath status --porcelain
+    if (-not [string]::IsNullOrWhiteSpace($status)) {
+        Write-Warning "Working tree is not clean after Codex run. Skipping PR creation."
+        return
+    }
+
+    & $GitPath push -u origin $branch
+    if ($LASTEXITCODE -ne 0) {
+        throw "git push failed for $branch."
+    }
+
+    $existingPr = & $GhPath pr list --head $branch --state open --json url --jq ".[0].url"
+    if ($LASTEXITCODE -eq 0 -and -not [string]::IsNullOrWhiteSpace($existingPr)) {
+        Write-Host "Pull request already exists: $existingPr"
+        return
+    }
+
+    $title = "Autofix JapanTireNews automation issue"
+    $body = @"
+Created automatically by the local Codex review task.
+
+Verification requested before merge:
+
+```powershell
+.\.venv\Scripts\python.exe -m japan_tire_news --dry-run --force
+```
+
+Secrets and runtime files such as `.env`, `.venv`, `data/`, and `logs/` should remain uncommitted.
+"@
+
+    & $GhPath pr create --base main --head $branch --title $title --body $body
+    if ($LASTEXITCODE -ne 0) {
+        throw "gh pr create failed for $branch."
+    }
+}
+
 $ProjectRoot = Split-Path -Parent $PSScriptRoot
 Set-Location $ProjectRoot
 Initialize-ToolPath
@@ -157,7 +215,7 @@ New-Item -ItemType Directory -Path $logsDir -Force | Out-Null
 $promptPath = Join-Path $logsDir "codex_daily_prompt.md"
 
 $modeText = if ($Autofix) {
-    "If there is a fatal automation issue, fix it without asking the user, commit the change, and push a branch named codex/autofix-YYYYMMDD-HHMM. Do not commit secrets, .env, data, logs, or .venv. If there is no fatal issue, only write a concise improvement proposal."
+    "If there is a fatal automation issue, fix it without asking the user, commit the change, and leave the repository on a branch named codex/autofix-YYYYMMDD-HHMM. Do not create a pull request yourself; this wrapper script will create it after you finish. Do not commit secrets, .env, data, logs, or .venv. If there is no fatal issue, only write a concise improvement proposal."
 } else {
     "Do not edit files. Review the open issues and the current code, then write a concise proposal for improving news quality and operational reliability."
 }
@@ -202,3 +260,10 @@ if ($Autofix) {
 }
 
 $prompt | & $codex.File @($codex.BaseArgs + $codexArgs)
+if ($LASTEXITCODE -ne 0) {
+    throw "Codex CLI failed with exit code $LASTEXITCODE."
+}
+
+if ($Autofix) {
+    New-CodexPullRequest -GitPath $git -GhPath (Resolve-GhCommand)
+}

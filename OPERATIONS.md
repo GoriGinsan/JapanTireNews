@@ -29,4 +29,4 @@ To allow Codex CLI to apply fatal fixes without asking the user, register the ta
 powershell.exe -ExecutionPolicy Bypass -File .\scripts\install_codex_review_task.ps1 -Autofix
 ```
 
-The Codex job pulls the latest `main`, reads up to 20 open GitHub issues, and writes its prompt to `logs/codex_daily_prompt.md`. In autofix mode, Codex is instructed to keep changes small, avoid committing secrets or runtime data, run a dry-run check, commit the fix, and push a `codex/autofix-*` branch.
+The Codex job pulls the latest `main`, reads up to 20 open GitHub issues, and writes its prompt to `logs/codex_daily_prompt.md`. In autofix mode, Codex is instructed to keep changes small, avoid committing secrets or runtime data, run a dry-run check, commit the fix, and leave the repository on a `codex/autofix-*` branch. After Codex exits successfully, the wrapper pushes that branch and creates a GitHub pull request with `gh pr create`.
