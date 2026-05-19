@@ -45,6 +45,8 @@ def main() -> None:
             if scored is None:
                 storage.log_rejected(item, reject_reason or "不明")
                 continue
+            if storage.has_seen_key(_title_key(scored.item.title)):
+                continue
 
             scored_items.append(scored)
 
@@ -61,7 +63,7 @@ def main() -> None:
         else:
             post_to_teams(config.teams_webhook_url, message, config.http_timeout_seconds)
             for scored in selected:
-                storage.save_notified(scored)
+                storage.save_notified(scored, _title_key(scored.item.title))
 
         storage.prune(days=180)
     finally:
@@ -95,6 +97,9 @@ def _select_unique(items: list[ScoredNews], limit: int) -> list[ScoredNews]:
 
 
 def _title_key(title: str) -> str:
+    topic_key = _topic_key(title)
+    if topic_key:
+        return topic_key
     product_key = _product_key(title)
     if product_key:
         return product_key
@@ -102,6 +107,20 @@ def _title_key(title: str) -> str:
     title = re.sub(r"\s+-\s+.*$", "", title)
     title = re.sub(r"[\s　「」『』【】\[\]・、。！？!?\"']", "", title.lower())
     return title[:45]
+
+
+def _topic_key(title: str) -> str | None:
+    compact = re.sub(r"[\s　「」『』【】\[\]・、。！？!?\"'－\-+＋]", "", title.lower())
+    topic_patterns = [
+        ("topic:toyo-m635", ["トーヨー", "小型トラック", "オールウェザー"]),
+        ("topic:toyo-m635", ["小型トラック", "オールウェザー", "m635"]),
+        ("topic:xice-snow-plus", ["ミシュラン", "スタッドレス", "xice"]),
+        ("topic:xice-snow-plus", ["ミシュラン", "スタッドレス", "xアイス"]),
+    ]
+    for key, terms in topic_patterns:
+        if all(term in compact for term in terms):
+            return key
+    return None
 
 
 def _product_key(title: str) -> str | None:
@@ -130,10 +149,25 @@ def _model_fragment(value: str) -> str | None:
 
 
 def _normalize_product(value: str) -> str:
-    return re.sub(r"[^a-z0-9+]", "", value.lower())
+    value = value.lower()
+    replacements = {
+        "ｘ": "x",
+        "＋": "+",
+        "アイス": "ice",
+        "スノー": "snow",
+        "プライマシー": "primacy",
+        "パイロットスポーツ": "pilotsport",
+    }
+    for source, replacement in replacements.items():
+        value = value.replace(source, replacement)
+
+    normalized = re.sub(r"[^a-z0-9+]", "", value)
+    for brand in ["michelin", "dunlop", "goodyear", "bridgestone", "pirelli", "continental", "yokohama"]:
+        normalized = normalized.replace(brand, "")
+    return normalized
 
 
 def _looks_like_product_name(value: str) -> bool:
     if len(value) < 3:
         return False
-    return any(char.isdigit() for char in value) or any(char in value for char in ["xice", "delvex", "sp", "snow"])
+    return any(char.isdigit() for char in value) or any(token in value for token in ["xice", "delvex", "sp", "snow", "primacy"])

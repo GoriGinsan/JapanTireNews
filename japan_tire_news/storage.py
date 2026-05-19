@@ -30,16 +30,24 @@ class Storage:
         ).fetchone()
         return row is not None
 
-    def save_notified(self, scored: ScoredNews) -> None:
+    def has_seen_key(self, canonical_key: str) -> bool:
+        row = self.connection.execute(
+            "select 1 from news_items where canonical_key = ? limit 1",
+            (canonical_key,),
+        ).fetchone()
+        return row is not None
+
+    def save_notified(self, scored: ScoredNews, canonical_key: str) -> None:
         item = scored.item
         self.connection.execute(
             """
             insert or ignore into news_items
-            (digest, title, url, source, summary, score, importance, reason, published_at, fetched_at, notified_at)
-            values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            (digest, canonical_key, title, url, source, summary, score, importance, reason, published_at, fetched_at, notified_at)
+            values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 item_digest(item),
+                canonical_key,
                 item.title,
                 item.url,
                 item.source,
@@ -75,6 +83,7 @@ class Storage:
             """
             create table if not exists news_items (
                 digest text primary key,
+                canonical_key text,
                 title text not null,
                 url text not null,
                 source text not null,
@@ -88,7 +97,17 @@ class Storage:
             )
             """
         )
+        self._ensure_column("news_items", "canonical_key", "text")
+        self.connection.execute(
+            "create index if not exists idx_news_items_canonical_key on news_items(canonical_key)"
+        )
         self.connection.commit()
+
+    def _ensure_column(self, table: str, column: str, definition: str) -> None:
+        rows = self.connection.execute(f"pragma table_info({table})").fetchall()
+        if any(row["name"] == column for row in rows):
+            return
+        self.connection.execute(f"alter table {table} add column {column} {definition}")
 
 
 def item_digest(item: NewsItem) -> str:
@@ -100,4 +119,3 @@ def _iso(value: datetime | None) -> str | None:
     if value is None:
         return None
     return value.isoformat()
-
