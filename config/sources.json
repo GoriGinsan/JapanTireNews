@@ -1,0 +1,77 @@
+{
+  "press_pages": [
+    {
+      "name": "ブリヂストン",
+      "url": "https://www.bridgestone.co.jp/corporate/news/search/?category=tire",
+      "home": "https://tire.bridgestone.co.jp/"
+    },
+    {
+      "name": "ミシュラン",
+      "url": "https://news.michelin.co.jp/",
+      "home": "https://www.michelin.co.jp/"
+    },
+    {
+      "name": "グッドイヤー",
+      "url": "https://www.goodyear.co.jp/press",
+      "home": "https://www.goodyear.co.jp/"
+    },
+    {
+      "name": "TOYO TIRE",
+      "url": "https://www.toyotires.co.jp/press/",
+      "home": "https://www.toyotires.co.jp/"
+    },
+    {
+      "name": "DUNLOP",
+      "url": "https://tyre.dunlop.co.jp/info/news/",
+      "home": "https://tyre.dunlop.co.jp/"
+    },
+    {
+      "name": "コンチネンタル",
+      "url": "https://www.continental-tires.com/jp/ja/about-us/newsroom/",
+      "home": "https://www.continental-tires.com/jp/ja/"
+    },
+    {
+      "name": "ピレリ",
+      "url": "https://www.pirelli.com/global/en-ww/road/cars/tyres/",
+      "home": "https://www.pirelli.com/tyres/ja-jp/car/homepage"
+    },
+    {
+      "name": "横浜タイヤ",
+      "url": "https://www.y-yokohama.com/release/?lang=ja",
+      "home": "https://www.y-yokohama.com/product/tire/"
+    }
+  ],
+  "rss_feeds": [
+    {
+      "name": "Google News タイヤ",
+      "url": "https://news.google.com/rss/search?q=%E3%82%BF%E3%82%A4%E3%83%A4%20(%E6%96%B0%E8%A3%BD%E5%93%81%20OR%20%E4%BE%A1%E6%A0%BC%E6%94%B9%E5%AE%9A%20OR%20%E6%96%B0%E8%BB%8A%E8%A3%85%E7%9D%80%20OR%20OE%20OR%20%E3%83%88%E3%83%A9%E3%83%83%E3%82%AF)%20-Hankook%20-%E8%87%AA%E8%BB%A2%E8%BB%8A%20-%E5%8E%9F%E4%BB%98%20-%E4%BA%8C%E8%BC%AA&hl=ja&gl=JP&ceid=JP:ja"
+    },
+    {
+      "name": "Google News 新型車",
+      "url": "https://news.google.com/rss/search?q=(%E6%96%B0%E5%9E%8B%E8%BB%8A%20OR%20%E6%96%B0%E5%9E%8BSUV%20OR%20%E6%96%B0%E5%9E%8BEV%20OR%20%E5%95%86%E7%94%A8%E8%BB%8A)%20(%E7%99%BA%E8%A1%A8%20OR%20%E7%99%BA%E5%A3%B2)%20-%E3%83%90%E3%82%A4%E3%82%AF%20-%E4%BA%8C%E8%BC%AA&hl=ja&gl=JP&ceid=JP:ja"
+    },
+    {
+      "name": "PR TIMES タイヤ",
+      "url": "https://prtimes.jp/main/rss/search?keyword=%E3%82%BF%E3%82%A4%E3%83%A4"
+    },
+    {
+      "name": "PR TIMES 新型車",
+      "url": "https://prtimes.jp/main/rss/search?keyword=%E6%96%B0%E5%9E%8B%E8%BB%8A"
+    }
+  ],
+  "social_sources": [
+    {
+      "name": "ブリヂストン Instagram",
+      "url": "https://www.instagram.com/bridgestone/?hl=ja",
+      "enabled": false,
+      "reason": "ログインや動的描画の影響が大きいためMVPでは未使用"
+    },
+    {
+      "name": "ブリヂストン X",
+      "url": "https://x.com/Bridgestone_JPN",
+      "enabled": false,
+      "reason": "Xは安定取得に公式APIまたは認証が必要なためMVPでは未使用"
+    }
+  ]
+}
+
