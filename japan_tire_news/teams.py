@@ -26,12 +26,13 @@ def build_message(items: list[ScoredNews]) -> str:
     lines = [f"タイヤ市場ニュース {now}", ""]
     for index, scored in enumerate(items, start=1):
         item = scored.item
+        article_url = _resolve_article_url(item.url)
         lines.extend(
             [
                 f"{index:02d}｜【{_display_source(item.source)}】{item.title}",
                 f"重要度スコア：{scored.importance} / {scored.score}",
                 f"要約：{scored.summary}",
-                f"リンク：{item.url}",
+                f"リンク：{article_url}",
                 "",
             ]
         )
@@ -348,6 +349,7 @@ def _looks_like_generic_thumbnail(page_url: str, image_url: str) -> bool:
         "placeholder",
         "spacer",
         "blank.",
+        "bnn_mov",
         ".svg",
     ]
     if any(marker in normalized_image for marker in generic_markers):

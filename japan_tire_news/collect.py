@@ -96,12 +96,21 @@ class Collector:
 def _parse_datetime(value: str) -> datetime | None:
     if not value:
         return None
+    try:
+        return parsedate_to_datetime(value)
+    except (TypeError, ValueError):
+        return None
 
 
 def _extract_date(value: str) -> datetime | None:
     match = re.search(r"(20\d{2})[./-](\d{1,2})[./-](\d{1,2})", value)
     if match:
         year, month, day = (int(part) for part in match.groups())
+        return _date_or_none(year, month, day)
+
+    japanese = re.search(r"(20\d{2})年\s*(\d{1,2})月\s*(\d{1,2})日", value)
+    if japanese:
+        year, month, day = (int(part) for part in japanese.groups())
         return _date_or_none(year, month, day)
 
     compact = re.search(r"(20\d{2})(\d{2})(\d{2})", value)
@@ -121,10 +130,6 @@ def _date_or_none(year: int, month: int, day: int) -> datetime | None:
     try:
         return datetime(year, month, day).astimezone()
     except ValueError:
-        return None
-    try:
-        return parsedate_to_datetime(value)
-    except (TypeError, ValueError):
         return None
 
 
