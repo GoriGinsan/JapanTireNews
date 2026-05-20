@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from datetime import datetime
+from typing import Any
 
 import requests
 
@@ -30,8 +31,37 @@ def post_to_teams(webhook_url: str, message: str, timeout_seconds: int) -> None:
 
     response = requests.post(
         webhook_url,
-        json={"text": message},
+        json=_build_adaptive_card(message),
         timeout=timeout_seconds,
     )
     response.raise_for_status()
+
+
+def _build_adaptive_card(message: str) -> dict[str, Any]:
+    lines = message.splitlines()
+    title = lines[0] if lines else "JapanTireNews"
+    body_text = "\n".join(lines[1:]).strip() if len(lines) > 1 else message
+
+    return {
+        "$schema": "http://adaptivecards.io/schemas/adaptive-card.json",
+        "type": "AdaptiveCard",
+        "version": "1.4",
+        "msteams": {
+            "width": "Full",
+        },
+        "body": [
+            {
+                "type": "TextBlock",
+                "text": title,
+                "weight": "Bolder",
+                "size": "Medium",
+                "wrap": True,
+            },
+            {
+                "type": "TextBlock",
+                "text": body_text,
+                "wrap": True,
+            },
+        ],
+    }
 
