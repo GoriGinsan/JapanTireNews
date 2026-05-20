@@ -63,8 +63,10 @@ def _build_adaptive_card(items: list[ScoredNews], timeout_seconds: int) -> dict[
                 {
                     "type": "Image",
                     "url": thumbnail_url,
-                    "size": "Stretch",
+                    "width": "200px",
+                    "height": "200px",
                     "altText": item.title,
+                    "horizontalAlignment": "Left",
                     "spacing": "Small",
                 }
             )
@@ -164,6 +166,31 @@ def _find_thumbnail_url(article_url: str, timeout_seconds: int) -> str | None:
             continue
         image_url = tag.get("content")
         if image_url:
-            return urljoin(response.url, image_url)
+            thumbnail_url = urljoin(response.url, image_url)
+            if _looks_like_generic_thumbnail(response.url, thumbnail_url):
+                continue
+            return thumbnail_url
     return None
+
+
+def _looks_like_generic_thumbnail(page_url: str, image_url: str) -> bool:
+    normalized_page = page_url.lower()
+    normalized_image = image_url.lower()
+    generic_markers = [
+        "google_news",
+        "googlenews",
+        "google-news",
+        "news.google.com",
+        "gstatic.com/news",
+        "gstatic.com/images/branding",
+        "googlelogo",
+        "google_logo",
+    ]
+    if any(marker in normalized_image for marker in generic_markers):
+        return True
+
+    if "news.google.com" in normalized_page:
+        return True
+
+    return False
 
