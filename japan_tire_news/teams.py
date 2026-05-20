@@ -10,6 +10,16 @@ from bs4 import BeautifulSoup
 
 from .models import ScoredNews
 
+try:
+    import googlenewsdecoder
+except ImportError:  # pragma: no cover - handled by requirements in normal installs.
+    googlenewsdecoder = None
+
+NO_IMAGE_URL = (
+    "https://raw.githubusercontent.com/GoriGinsan/JapanTireNews/main/assets/no-image.png"
+)
+USER_AGENT = "JapanTireNews/0.1"
+
 
 def build_message(items: list[ScoredNews]) -> str:
     now = datetime.now().astimezone().strftime("%Y-%m-%d %H:%M")
@@ -54,23 +64,22 @@ def _build_adaptive_card(items: list[ScoredNews], timeout_seconds: int) -> dict[
 
     for index, scored in enumerate(items, start=1):
         item = scored.item
-        thumbnail_url = _find_thumbnail_url(item.url, timeout_seconds)
+        article_url = _resolve_article_url(item.url)
+        thumbnail_url = _find_thumbnail_url(article_url, timeout_seconds) or NO_IMAGE_URL
         article_items: list[dict[str, Any]] = [
             _title_cell(f"{index:02d}｜【{_display_source(item.source)}】{item.title}")
         ]
 
-        if thumbnail_url:
-            article_items.append(
-                {
-                    "type": "Image",
-                    "url": thumbnail_url,
-                    "width": "200px",
-                    "height": "200px",
-                    "altText": item.title,
-                    "horizontalAlignment": "Left",
-                    "spacing": "Small",
-                }
-            )
+        article_items.append(
+            {
+                "type": "Image",
+                "url": thumbnail_url,
+                "width": "200px",
+                "altText": item.title,
+                "horizontalAlignment": "Left",
+                "spacing": "Small",
+            }
+        )
 
         article_items.extend(
             [
@@ -92,7 +101,7 @@ def _build_adaptive_card(items: list[ScoredNews], timeout_seconds: int) -> dict[
                         {
                             "type": "Action.OpenUrl",
                             "title": "リンク",
-                            "url": item.url,
+                            "url": article_url,
                         }
                     ],
                 },
@@ -142,12 +151,33 @@ def _display_source(source: str) -> str:
     return source
 
 
+def _resolve_article_url(article_url: str) -> str:
+    parsed = urlparse(article_url)
+    if parsed.netloc.lower() != "news.google.com":
+        return article_url
+    if googlenewsdecoder is None:
+        return article_url
+
+    try:
+        decoded = googlenewsdecoder.gnewsdecoder(article_url)
+    except Exception:
+        return article_url
+
+    if not decoded.get("status"):
+        return article_url
+
+    decoded_url = decoded.get("decoded_url")
+    if not isinstance(decoded_url, str) or not decoded_url.startswith(("http://", "https://")):
+        return article_url
+    return decoded_url
+
+
 def _find_thumbnail_url(article_url: str, timeout_seconds: int) -> str | None:
     timeout = min(timeout_seconds, 6)
     try:
         response = requests.get(
             article_url,
-            headers={"User-Agent": "JapanTireNews/0.1"},
+            headers={"User-Agent": USER_AGENT},
             timeout=timeout,
         )
         response.raise_for_status()
@@ -180,23 +210,23 @@ def _candidate_image_urls(soup: BeautifulSoup, page_url: str) -> list[str]:
             continue
         image_url = tag.get("content") or tag.get("href")
         if image_url:
-            candidates.append((100, image_url))
+            candidates.append((80, image_url))
 
     for video in soup.select("video[poster]"):
         poster = video.get("poster")
         if poster:
-            candidates.append((95, poster))
+            candidates.append((115, poster))
 
     for iframe in soup.select("iframe[src]"):
         thumbnail = _video_thumbnail_from_iframe(iframe.get("src", ""))
         if thumbnail:
-            candidates.append((90, thumbnail))
+            candidates.append((110, thumbnail))
 
     for image in soup.select("main img, article img, [role='main'] img, .article img, .news img, .entry img, img"):
         image_url = _image_url_from_tag(image)
         if not image_url:
             continue
-        score = 70
+        score = 105
         width = _int_or_none(image.get("width"))
         height = _int_or_none(image.get("height"))
         if width and height:
@@ -220,14 +250,23 @@ def _candidate_image_urls(soup: BeautifulSoup, page_url: str) -> list[str]:
 
 
 def _image_url_from_tag(image: Any) -> str | None:
-    for attr in ["src", "data-src", "data-original", "data-lazy-src"]:
-        value = image.get(attr)
-        if value:
-            return value
-
     srcset = image.get("srcset") or image.get("data-srcset")
     if srcset:
         return _largest_srcset_url(srcset)
+
+    for attr in [
+        "data-src",
+        "data-original",
+        "data-original-src",
+        "data-lazy-src",
+        "data-lazy",
+        "data-large",
+        "src",
+    ]:
+        value = image.get(attr)
+        if value and not str(value).startswith("data:"):
+            return value
+
     return None
 
 
@@ -290,8 +329,10 @@ def _looks_like_generic_thumbnail(page_url: str, image_url: str) -> bool:
         "apple-touch-icon",
         "/logo",
         "logo.",
+        "logo-",
         "logo_",
         "_logo",
+        "rn-logo",
         "/icon",
         "icon_",
         "rn-icon",
