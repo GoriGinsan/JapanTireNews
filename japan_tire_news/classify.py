@@ -3,6 +3,7 @@ from __future__ import annotations
 import re
 
 from .models import NewsItem, ScoredNews
+from .quality import low_quality_reason
 
 
 INCLUDE_TERMS = {
@@ -112,6 +113,10 @@ COMPETITOR_TERMS = [
 
 
 def classify_item(item: NewsItem) -> tuple[ScoredNews | None, str | None]:
+    quality_reason = low_quality_reason(item)
+    if quality_reason:
+        return None, f"品質除外: {quality_reason}"
+
     text = _normalize(" ".join([item.title, item.summary, item.raw_text, item.source]))
 
     excluded = [term for term in EXCLUDE_TERMS if term in text]

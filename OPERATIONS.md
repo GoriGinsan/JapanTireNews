@@ -18,6 +18,7 @@ GitHub issue creation requires one of the following:
 ## Daily Codex review task
 
 The Windows task `JapanTireNewsCodexReview` asks Codex CLI to inspect open issues and propose reliability or news-quality improvements at 09:00.
+Before invoking Codex, it also runs `python -m japan_tire_news.quality_audit --force --limit 10`. If category pages, product-list pages, tire/wheel listing pages, motorsports index pages, or other non-news pages are detected in the ranked candidates, it creates a GitHub issue with labels `bug`, `automation`, and `news-quality`.
 
 ```powershell
 powershell.exe -ExecutionPolicy Bypass -File .\scripts\install_codex_review_task.ps1
@@ -30,3 +31,4 @@ powershell.exe -ExecutionPolicy Bypass -File .\scripts\install_codex_review_task
 ```
 
 The Codex job pulls the latest `main`, reads up to 20 open GitHub issues, and writes its prompt to `logs/codex_daily_prompt.md`. In autofix mode, Codex is instructed to keep changes small, avoid committing secrets or runtime data, run a dry-run check, commit the fix, and leave the repository on a `codex/autofix-*` branch. After Codex exits successfully, the wrapper pushes that branch and creates a GitHub pull request with `gh pr create`.
+When a pull request is created successfully, the wrapper posts a Teams notification so the user can see that Codex executed an improvement.

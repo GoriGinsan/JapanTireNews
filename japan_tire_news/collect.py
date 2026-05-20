@@ -10,6 +10,7 @@ import requests
 from bs4 import BeautifulSoup
 
 from .models import NewsItem
+from .quality import low_quality_reason
 
 
 USER_AGENT = "JapanTireNews/0.1 (+https://github.com/GoriGinsan/JapanTireNews)"
@@ -78,17 +79,18 @@ class Collector:
             if _looks_like_navigation_link(link):
                 continue
             context = _clean(anchor.parent.get_text(" ", strip=True) if anchor.parent else title)
-            items.append(
-                NewsItem(
-                    title=title,
-                    url=link,
-                    source=source_name,
-                    summary=context,
-                    published_at=_extract_date(f"{context} {link}"),
-                    fetched_at=fetched_at,
-                    raw_text=context,
-                )
+            item = NewsItem(
+                title=title,
+                url=link,
+                source=source_name,
+                summary=context,
+                published_at=_extract_date(f"{context} {link}"),
+                fetched_at=fetched_at,
+                raw_text=context,
             )
+            if low_quality_reason(item):
+                continue
+            items.append(item)
 
         return items[:60]
 

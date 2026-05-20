@@ -140,6 +140,107 @@ function Get-OpenIssuesSummary {
     return "[]"
 }
 
+function Invoke-NewsQualityAudit {
+    param(
+        [string]$LogsDir
+    )
+
+    $reportPath = Join-Path $LogsDir ("news_quality_audit_{0}.md" -f (Get-Date -Format "yyyyMMdd-HHmmss"))
+    $output = & ".\.venv\Scripts\python.exe" -m japan_tire_news.quality_audit --force --limit 10 --output $reportPath 2>&1
+    $exitCode = $LASTEXITCODE
+    $output | Set-Content -LiteralPath (Join-Path $LogsDir "last_news_quality_audit.log") -Encoding UTF8
+
+    if ($exitCode -eq 0) {
+        return @{
+            HasFindings = $false
+            ReportPath = $reportPath
+            Report = ($output -join "`r`n")
+        }
+    }
+
+    if ($exitCode -eq 2) {
+        $hashInput = $output -join "`n"
+        $hashBytes = [System.Security.Cryptography.SHA256]::HashData([System.Text.Encoding]::UTF8.GetBytes($hashInput))
+        $qualityHash = [Convert]::ToHexString($hashBytes)
+        $lastQualityHashPath = Join-Path $LogsDir "last_quality_issue_hash.txt"
+        $lastQualityHash = if (Test-Path $lastQualityHashPath) {
+            Get-Content -LiteralPath $lastQualityHashPath -Raw
+        } else {
+            ""
+        }
+
+        $body = @(
+            "The daily news-quality audit detected low-quality items that could be posted to Teams.",
+            "",
+            "Audit report path: $reportPath",
+            "",
+            "Report:",
+            '```markdown',
+            ($output -join "`r`n"),
+            '```',
+            "",
+            "Expected behavior:",
+            "- Category, product-list, tire/wheel listing, and motorsports index pages should not rank as news.",
+            "- The collection and classification filters should reject these items before Teams posting."
+        ) -join "`r`n"
+
+        if ($lastQualityHash.Trim() -ne $qualityHash) {
+            & powershell.exe -NoProfile -ExecutionPolicy Bypass -File ".\scripts\create_github_issue.ps1" `
+                -Title "JapanTireNews news-quality audit detected non-news pages" `
+                -Body $body `
+                -Labels @("bug", "automation", "news-quality")
+            $qualityHash | Set-Content -LiteralPath $lastQualityHashPath -Encoding ASCII
+        } else {
+            Write-Warning "Skipping GitHub issue creation because this news-quality finding was already reported."
+        }
+
+        return @{
+            HasFindings = $true
+            ReportPath = $reportPath
+            Report = ($output -join "`r`n")
+        }
+    }
+
+    throw "News quality audit failed with exit code $exitCode."
+}
+
+function Send-TeamsNotification {
+    param(
+        [string]$Title,
+        [string]$Message
+    )
+
+    if ([string]::IsNullOrWhiteSpace($env:TEAMS_WEBHOOK_URL)) {
+        Write-Warning "TEAMS_WEBHOOK_URL is not configured. Skipping Teams notification."
+        return
+    }
+
+    $payload = @{
+        '$schema' = "http://adaptivecards.io/schemas/adaptive-card.json"
+        type = "AdaptiveCard"
+        version = "1.4"
+        msteams = @{
+            width = "Full"
+        }
+        body = @(
+            @{
+                type = "TextBlock"
+                text = $Title
+                weight = "Bolder"
+                size = "Medium"
+                wrap = $true
+            },
+            @{
+                type = "TextBlock"
+                text = $Message
+                wrap = $true
+            }
+        )
+    } | ConvertTo-Json -Depth 8
+
+    Invoke-RestMethod -Method Post -Uri $env:TEAMS_WEBHOOK_URL -Body $payload -ContentType "application/json" | Out-Null
+}
+
 function New-CodexPullRequest {
     param(
         [string]$GitPath,
@@ -148,24 +249,24 @@ function New-CodexPullRequest {
 
     if (-not $GhPath) {
         Write-Warning "GitHub CLI was not found. Skipping PR creation."
-        return
+        return $null
     }
 
     $branch = (& $GitPath branch --show-current).Trim()
     if ([string]::IsNullOrWhiteSpace($branch) -or $branch -eq "main") {
         Write-Host "No Codex autofix branch is checked out. Skipping PR creation."
-        return
+        return $null
     }
 
     if ($branch -notlike "codex/autofix-*") {
         Write-Host "Current branch '$branch' is not a Codex autofix branch. Skipping PR creation."
-        return
+        return $null
     }
 
     $status = & $GitPath status --porcelain
     if (-not [string]::IsNullOrWhiteSpace($status)) {
         Write-Warning "Working tree is not clean after Codex run. Skipping PR creation."
-        return
+        return $null
     }
 
     & $GitPath push -u origin $branch
@@ -176,7 +277,7 @@ function New-CodexPullRequest {
     $existingPr = & $GhPath pr list --head $branch --state open --json url --jq ".[0].url"
     if ($LASTEXITCODE -eq 0 -and -not [string]::IsNullOrWhiteSpace($existingPr)) {
         Write-Host "Pull request already exists: $existingPr"
-        return
+        return $existingPr
     }
 
     $title = "Autofix JapanTireNews automation issue"
@@ -192,10 +293,11 @@ Verification requested before merge:
 Secrets and runtime files such as `.env`, `.venv`, `data/`, and `logs/` should remain uncommitted.
 "@
 
-    & $GhPath pr create --base main --head $branch --title $title --body $body
+    $prOutput = & $GhPath pr create --base main --head $branch --title $title --body $body
     if ($LASTEXITCODE -ne 0) {
         throw "gh pr create failed for $branch."
     }
+    return ($prOutput | Select-Object -Last 1)
 }
 
 $ProjectRoot = Split-Path -Parent $PSScriptRoot
@@ -208,10 +310,10 @@ $git = Resolve-GitCommand
 if ($LASTEXITCODE -ne 0) {
     throw "git pull failed."
 }
-
-$issues = Get-OpenIssuesSummary
 $logsDir = Join-Path $ProjectRoot "logs"
 New-Item -ItemType Directory -Path $logsDir -Force | Out-Null
+$qualityAudit = Invoke-NewsQualityAudit -LogsDir $logsDir
+$issues = Get-OpenIssuesSummary
 $promptPath = Join-Path $logsDir "codex_daily_prompt.md"
 
 $modeText = if ($Autofix) {
@@ -227,6 +329,12 @@ Open GitHub issues:
 
 ```json
 $issues
+```
+
+Latest news-quality audit:
+
+```markdown
+$($qualityAudit.Report)
 ```
 
 Task:
@@ -265,5 +373,10 @@ if ($LASTEXITCODE -ne 0) {
 }
 
 if ($Autofix) {
-    New-CodexPullRequest -GitPath $git -GhPath (Resolve-GhCommand)
+    $prUrl = New-CodexPullRequest -GitPath $git -GhPath (Resolve-GhCommand)
+    if (-not [string]::IsNullOrWhiteSpace($prUrl)) {
+        Send-TeamsNotification `
+            -Title "JapanTireNews Codex改善を実行しました" `
+            -Message "Codexが自動修正ブランチをPushし、Pull Requestを作成しました。PR: $prUrl"
+    }
 }

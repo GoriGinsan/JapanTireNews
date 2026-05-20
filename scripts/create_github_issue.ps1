@@ -128,6 +128,10 @@ function Ensure-GitHubLabels {
             Color = "d73a4a"
             Description = "Something is not working"
         }
+        "news-quality" = @{
+            Color = "fbca04"
+            Description = "News selection or ranking quality issue"
+        }
     }
 
     $existing = & $GhPath label list --repo $RepoName --limit 200 --json name | ConvertFrom-Json
