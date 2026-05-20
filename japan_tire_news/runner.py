@@ -63,7 +63,7 @@ def main() -> None:
         if args.dry_run:
             print(message)
         else:
-            post_to_teams(config.teams_webhook_url, message, config.http_timeout_seconds)
+            post_to_teams(config.teams_webhook_url, selected, config.http_timeout_seconds)
             for scored in selected:
                 storage.save_notified(scored, _title_key(scored.item.title))
 
