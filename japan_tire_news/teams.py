@@ -1,8 +1,9 @@
 from __future__ import annotations
 
+import re
 from datetime import datetime
 from typing import Any
-from urllib.parse import urljoin
+from urllib.parse import parse_qs, urljoin, urlparse
 
 import requests
 from bs4 import BeautifulSoup
@@ -17,7 +18,7 @@ def build_message(items: list[ScoredNews]) -> str:
         item = scored.item
         lines.extend(
             [
-                f"{index}. 【{_display_source(item.source)}】{item.title}",
+                f"{index:02d}｜【{_display_source(item.source)}】{item.title}",
                 f"重要度スコア：{scored.importance} / {scored.score}",
                 f"要約：{scored.summary}",
                 f"リンク：{item.url}",
@@ -55,7 +56,7 @@ def _build_adaptive_card(items: list[ScoredNews], timeout_seconds: int) -> dict[
         item = scored.item
         thumbnail_url = _find_thumbnail_url(item.url, timeout_seconds)
         article_items: list[dict[str, Any]] = [
-            _title_cell(f"{index}. 【{_display_source(item.source)}】{item.title}")
+            _title_cell(f"{index:02d}｜【{_display_source(item.source)}】{item.title}")
         ]
 
         if thumbnail_url:
@@ -154,23 +155,123 @@ def _find_thumbnail_url(article_url: str, timeout_seconds: int) -> str | None:
         return None
 
     soup = BeautifulSoup(response.text, "html.parser")
-    selectors = [
+    for image_url in _candidate_image_urls(soup, response.url):
+        thumbnail_url = urljoin(response.url, image_url)
+        if _looks_like_generic_thumbnail(response.url, thumbnail_url):
+            continue
+        return thumbnail_url
+    return None
+
+
+def _candidate_image_urls(soup: BeautifulSoup, page_url: str) -> list[str]:
+    candidates: list[tuple[int, str]] = []
+
+    meta_selectors = [
         'meta[property="og:image"]',
         'meta[property="og:image:url"]',
         'meta[name="twitter:image"]',
         'meta[name="twitter:image:src"]',
+        'meta[itemprop="image"]',
+        'link[rel="image_src"]',
     ]
-    for selector in selectors:
+    for selector in meta_selectors:
         tag = soup.select_one(selector)
         if not tag:
             continue
-        image_url = tag.get("content")
+        image_url = tag.get("content") or tag.get("href")
         if image_url:
-            thumbnail_url = urljoin(response.url, image_url)
-            if _looks_like_generic_thumbnail(response.url, thumbnail_url):
+            candidates.append((100, image_url))
+
+    for video in soup.select("video[poster]"):
+        poster = video.get("poster")
+        if poster:
+            candidates.append((95, poster))
+
+    for iframe in soup.select("iframe[src]"):
+        thumbnail = _video_thumbnail_from_iframe(iframe.get("src", ""))
+        if thumbnail:
+            candidates.append((90, thumbnail))
+
+    for image in soup.select("main img, article img, [role='main'] img, .article img, .news img, .entry img, img"):
+        image_url = _image_url_from_tag(image)
+        if not image_url:
+            continue
+        score = 70
+        width = _int_or_none(image.get("width"))
+        height = _int_or_none(image.get("height"))
+        if width and height:
+            if width < 120 or height < 90:
                 continue
-            return thumbnail_url
+            score += min((width * height) // 60000, 20)
+        alt_text = " ".join([image.get("alt", ""), image.get("title", "")]).lower()
+        if any(term in alt_text for term in ["logo", "ロゴ", "icon", "アイコン"]):
+            continue
+        candidates.append((score, image_url))
+
+    seen: set[str] = set()
+    ordered = []
+    for _, image_url in sorted(candidates, key=lambda item: item[0], reverse=True):
+        absolute = urljoin(page_url, image_url)
+        if absolute in seen:
+            continue
+        seen.add(absolute)
+        ordered.append(absolute)
+    return ordered
+
+
+def _image_url_from_tag(image: Any) -> str | None:
+    for attr in ["src", "data-src", "data-original", "data-lazy-src"]:
+        value = image.get(attr)
+        if value:
+            return value
+
+    srcset = image.get("srcset") or image.get("data-srcset")
+    if srcset:
+        return _largest_srcset_url(srcset)
     return None
+
+
+def _largest_srcset_url(srcset: str) -> str | None:
+    best_url = None
+    best_score = -1
+    for part in srcset.split(","):
+        tokens = part.strip().split()
+        if not tokens:
+            continue
+        image_url = tokens[0]
+        score = 0
+        if len(tokens) > 1:
+            match = re.match(r"(\d+)(w|x)", tokens[1])
+            if match:
+                score = int(match.group(1))
+        if score >= best_score:
+            best_url = image_url
+            best_score = score
+    return best_url
+
+
+def _video_thumbnail_from_iframe(src: str) -> str | None:
+    parsed = urlparse(src)
+    hostname = parsed.netloc.lower()
+    if "youtube.com" in hostname:
+        if "/embed/" in parsed.path:
+            video_id = parsed.path.rsplit("/", 1)[-1]
+        else:
+            video_id = parse_qs(parsed.query).get("v", [""])[0]
+        if video_id:
+            return f"https://img.youtube.com/vi/{video_id}/hqdefault.jpg"
+    if "youtu.be" in hostname:
+        video_id = parsed.path.strip("/")
+        if video_id:
+            return f"https://img.youtube.com/vi/{video_id}/hqdefault.jpg"
+    return None
+
+
+def _int_or_none(value: Any) -> int | None:
+    try:
+        return int(str(value).strip())
+    except (TypeError, ValueError):
+        return None
 
 
 def _looks_like_generic_thumbnail(page_url: str, image_url: str) -> bool:
@@ -185,6 +286,28 @@ def _looks_like_generic_thumbnail(page_url: str, image_url: str) -> bool:
         "gstatic.com/images/branding",
         "googlelogo",
         "google_logo",
+        "favicon",
+        "apple-touch-icon",
+        "/logo",
+        "logo.",
+        "logo_",
+        "_logo",
+        "/icon",
+        "icon_",
+        "rn-icon",
+        "share.png",
+        "/share",
+        "common/images/common",
+        "products_bnr",
+        "special_bnr",
+        "catalogue_bnr",
+        "/menu_",
+        "noimage",
+        "no-image",
+        "placeholder",
+        "spacer",
+        "blank.",
+        ".svg",
     ]
     if any(marker in normalized_image for marker in generic_markers):
         return True

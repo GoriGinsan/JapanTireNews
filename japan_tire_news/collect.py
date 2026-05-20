@@ -75,6 +75,8 @@ class Collector:
             if _looks_like_navigation(title):
                 continue
             link = urljoin(url, href)
+            if _looks_like_navigation_link(link):
+                continue
             context = _clean(anchor.parent.get_text(" ", strip=True) if anchor.parent else title)
             items.append(
                 NewsItem(
@@ -145,9 +147,49 @@ def _looks_like_navigation(title: str) -> bool:
         "cookie",
         "privacy",
         "menu",
+        "ページtop",
+        "ページトップ",
+        "プライバシーポリシー",
     ]
     lower = title.lower()
     return any(term in lower for term in navigation_terms)
+
+
+def _looks_like_navigation_link(url: str) -> bool:
+    lower = url.lower()
+    navigation_paths = [
+        "/products/",
+        "/products/list",
+        "/products/oe/",
+        "/special/",
+        "/catalogue/",
+        "/strength/",
+        "/knowledge/",
+        "/dictionary/",
+        "/corporate/",
+        "/contact/",
+        "/shop/",
+        "/search/",
+        "/privacy",
+        "/policy/",
+        "/cookie",
+        "#pagetop",
+        "instagram.com",
+        "facebook.com",
+        "x.com/",
+        "youtube.com/",
+    ]
+    allowed_news_paths = [
+        "/corporate/news/",
+        "/press/",
+        "/release/",
+        "/news/",
+        "/info/news/",
+        "/newsroom/",
+    ]
+    if any(path in lower for path in allowed_news_paths):
+        return False
+    return any(path in lower for path in navigation_paths)
 
 
 def _dedupe_in_memory(items: list[NewsItem]) -> list[NewsItem]:
